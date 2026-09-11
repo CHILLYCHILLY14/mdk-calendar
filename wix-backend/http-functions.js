@@ -10,8 +10,9 @@
      POST https://www.mdkelectric.ca/_functions/mdkCalendar       app sync API
      GET  https://www.mdkelectric.ca/_functions/mdkCalendarFeed   phone calendar feed (.ics)
 
-   Data lives in two CMS collections (admin-only, created already):
+   Data lives in three CMS collections (admin-only, created already):
      CalendarEvents  – one row per calendar entry
+     CalendarItems   – jobs, vans and van material/repair requests
      CalendarConfig  – row "main": accessKey, feedKey, shared team settings
    ===================================================================== */
 import { response as mdkCalResponse } from 'wix-http-functions';
@@ -19,6 +20,8 @@ import mdkCalData from 'wix-data';
 
 const MDKCAL_EVENTS = 'CalendarEvents';
 const MDKCAL_CONFIG = 'CalendarConfig';
+const MDKCAL_ITEMS = 'CalendarItems';
+const MDKCAL_KINDS = ['job', 'van', 'vanlog'];
 const MDKCAL_OPTS = { suppressAuth: true };
 const MDKCAL_CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -84,9 +87,35 @@ function mdkCalCleanEvent(e) {
       until: mdkCalDate(repeat.until),
       exdates: Array.isArray(repeat.exdates) ? repeat.exdates.filter(mdkCalDate).slice(0, 500) : []
     },
+    jobId: mdkCalStr(e.jobId, 64),
     createdBy: mdkCalStr(e.createdBy, 40),
     createdAt: Number(e.createdAt) || Date.now()
   };
+}
+
+/** Validate a job / van / van request sent by the app. Stored as a JSON object. */
+function mdkCalCleanItem(it) {
+  if (!it || typeof it !== 'object') throw new Error('Missing item');
+  const id = mdkCalStr(it.id, 64);
+  if (!/^[A-Za-z0-9_-]{3,64}$/.test(id)) throw new Error('Bad item id');
+  if (!MDKCAL_KINDS.includes(it.kind)) throw new Error('Bad item kind');
+  const data = JSON.parse(JSON.stringify(it));
+  delete data.updatedAt; delete data.updatedBy; delete data.deleted;
+  if (JSON.stringify(data).length > 60000) throw new Error('Item too large');
+  data.id = id;
+  data.createdBy = mdkCalStr(data.createdBy, 40);
+  data.createdAt = Number(data.createdAt) || Date.now();
+  return data;
+}
+
+function mdkCalRowToItem(row) {
+  const it = Object.assign({}, row.data || {});
+  it.id = row._id;
+  it.kind = row.kind;
+  it.updatedAt = row.updatedAtMs || 0;
+  it.updatedBy = row.updatedBy || '';
+  if (row.deleted) it.deleted = true;
+  return it;
 }
 
 function mdkCalRowToEvent(row) {
@@ -141,7 +170,10 @@ export async function post_mdkCalendar(request) {
       let q = mdkCalData.query(MDKCAL_EVENTS);
       q = since > 0 ? q.gt('updatedAtMs', since) : q.ne('deleted', true);
       const rows = await mdkCalQueryAll(q);
-      const out = { serverTime, events: rows.map(mdkCalRowToEvent), feedKey: cfg.feedKey || '' };
+      let iq = mdkCalData.query(MDKCAL_ITEMS);
+      iq = since > 0 ? iq.gt('updatedAtMs', since) : iq.ne('deleted', true);
+      const itemRows = await mdkCalQueryAll(iq);
+      const out = { serverTime, events: rows.map(mdkCalRowToEvent), items: itemRows.map(mdkCalRowToItem), feedKey: cfg.feedKey || '' };
       if (!since || (cfg.settingsUpdatedAtMs || 0) > since) {
         out.settings = cfg.settings || null;
         out.settingsUpdatedAt = cfg.settingsUpdatedAtMs || 0;
@@ -185,6 +217,41 @@ export async function post_mdkCalendar(request) {
       existing.updatedBy = by;
       const saved = await mdkCalData.update(MDKCAL_EVENTS, existing, MDKCAL_OPTS);
       return mdkCalJson(200, { event: mdkCalRowToEvent(saved) });
+    }
+
+    if (action === 'saveItem') {
+      const it = mdkCalCleanItem(body.item);
+      const existing = await mdkCalData.get(MDKCAL_ITEMS, it.id, MDKCAL_OPTS);
+      const base = Number(body.baseUpdatedAt) || 0;
+      if (existing && !existing.deleted && !body.force && base && (existing.updatedAtMs || 0) > base) {
+        return mdkCalJson(200, { conflict: true, current: mdkCalRowToItem(existing) });
+      }
+      if (existing && existing.data && existing.data.createdBy) {
+        it.createdBy = existing.data.createdBy;
+        it.createdAt = existing.data.createdAt || it.createdAt;
+      }
+      const row = {
+        _id: it.id,
+        kind: it.kind,
+        title: mdkCalStr(it.title || it.text || it.name, 140),
+        data: it,
+        deleted: false,
+        updatedAtMs: Date.now(),
+        updatedBy: by
+      };
+      const saved = await mdkCalData.save(MDKCAL_ITEMS, row, MDKCAL_OPTS);
+      return mdkCalJson(200, { item: mdkCalRowToItem(saved) });
+    }
+
+    if (action === 'deleteItem') {
+      const id = mdkCalStr(body.id, 64);
+      const existing = await mdkCalData.get(MDKCAL_ITEMS, id, MDKCAL_OPTS);
+      if (!existing) return mdkCalJson(200, { ok: true });
+      existing.deleted = true;
+      existing.updatedAtMs = Date.now();
+      existing.updatedBy = by;
+      const saved = await mdkCalData.update(MDKCAL_ITEMS, existing, MDKCAL_OPTS);
+      return mdkCalJson(200, { item: mdkCalRowToItem(saved) });
     }
 
     if (action === 'saveSettings') {
