@@ -1,0 +1,6 @@
+dev/db.json
+dev/backend.mjs
+node_modules/
+.DS_Store
+dev/.pid
+dev/server.log

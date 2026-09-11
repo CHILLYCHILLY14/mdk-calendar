@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="MDK Electric team calendar — shared crew schedule." />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#1f2bd1" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="MDK Calendar" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
+  <link rel="icon" href="./assets/icon-192.png" />
+  <script>
+    // Apply saved theme before paint (no flash)
+    (function () {
+      try {
+        var t = localStorage.getItem('mdkcal.theme') || 'auto';
+        if (t === 'auto') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = t;
+      } catch (e) {}
+      if (window.self !== window.top) document.documentElement.classList.add('is-embedded');
+    })();
+  </script>
+  <link rel="stylesheet" href="./styles.css?v=1" />
+  <title>MDK Team Calendar</title>
+</head>
+<body>
+  <div id="app" class="app" aria-busy="true">
+    <div class="boot"><div class="boot-bolt" aria-hidden="true"></div><p>Loading calendar…</p></div>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  <noscript>This calendar needs JavaScript turned on.</noscript>
+  <script src="./config.js?v=1"></script>
+  <script type="module" src="./app.js?v=1"></script>
+</body>
+</html>
