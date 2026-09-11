@@ -1,6 +1,6 @@
 # Connect the calendar to mdkelectric.ca
 
-The database tables are already created in the Wix CMS (**CalendarEvents** and **CalendarConfig**). You need to do two things: add the backend code, then add the calendar page.
+The database tables are already created in the Wix CMS (**CalendarEvents**, **CalendarItems** and **CalendarConfig**). You need to do two things: add the backend code, then add the calendar page.
 
 ## 1. Add the backend code (one time, about 3 minutes)
 

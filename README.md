@@ -16,6 +16,9 @@ A shared crew calendar for MDK Electric. It's hosted on GitHub Pages and linked 
 - **Ontario holidays** are shown on the calendar. You can turn them off.
 - **Works offline:** changes you make offline are saved on the device and upload when it's back online. If two people edit the same entry, the app asks whose version to keep.
 - **Phone calendar feed:** subscribe once (read-only) and entries show up in the iPhone, Google, or Outlook calendar app.
+- **Jobs:** a job list with customer, phone, address, crew, status (To schedule → Scheduled → In progress → Waiting on material → Complete → Invoiced), priority, quote/PO #, scope and a checklist. Scheduling a job puts it on the assigned crew's calendars, and moving it on the calendar updates the job.
+- **Vans:** a card per van (Dustin, Kevin, Mike, Michael, Cal, Scott, Justin, Noah) where anyone can log material needed, repairs, maintenance or notes. Tap the circle to move a request along (Needed → Ordered → Restocked, or Reported → Booked in → Fixed). Van details include unit #, plate, odometer, and next service and safety dates, which show on the calendar. The **Material list** gathers every van's needs into one list you can copy or share with the supplier.
+- **Recent changes** in the side panel show who changed what.
 - **Search**, keyboard shortcuts, print, and add-to-home-screen.
 
 ## How it works
@@ -27,7 +30,7 @@ index.html · app.js · styles.css      (wix-backend/http-functions.js)         
 ```
 
 - The app is plain HTML, CSS, and JavaScript with no build step and no dependencies.
-- Entries are stored in the Wix site's CMS, in the **CalendarEvents** collection. Only the site admin can read or write it directly. The backend code checks the access key on every request.
+- Entries are stored in the Wix site's CMS: calendar entries in **CalendarEvents**, and jobs, vans and van requests in **CalendarItems**. Only the site admin can read or write it directly. The backend code checks the access key on every request.
 - The access key and phone-feed key are stored in the **CalendarConfig** collection (row `main`) in the Wix CMS. They're never in this repo. To revoke everyone's access, change `accessKey` there and send people the new link.
 
 ## Files
@@ -55,5 +58,6 @@ Demo mode (sample data, nothing shared): add `#demo` to the URL.
 - Open straight to a person: `…/mdk-calendar/#k=KEY&person=Dustin`
 - Several people plus a view: `…/mdk-calendar/#k=KEY&person=Dustin,Cal&view=crew`
 - Views: `month`, `week`, `day`, `crew`, `list`
+- Open Jobs or Vans directly: `…/mdk-calendar/#k=KEY&section=jobs` or `&section=vans`
 
 The MDK name and logo belong to MDK Electric Ltd.

@@ -5,7 +5,7 @@
    live sync through the Wix backend (wix-backend/http-functions.js).
    ========================================================================== */
 const CFG = window.MDK_CALENDAR_CONFIG || {};
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '2.0.0';
 
 /* ---------------- constants ---------------- */
 const DEFAULT_PEOPLE = [
@@ -36,6 +36,7 @@ const THEMES = [
   { id: 'blueprint', label: 'Blueprint', pv: ['#e9f1fb', '#f7fbff', '#0b5cc2', '#c9dbef'] }
 ];
 const VIEWS = [['month', 'Month'], ['week', 'Week'], ['day', 'Day'], ['crew', 'Crew'], ['list', 'List']];
+const SECTIONS = [['calendar', 'Calendar', 'cal'], ['jobs', 'Jobs', 'clipboard'], ['vans', 'Vans', 'truck']];
 const REPEATS = [['none', 'Does not repeat'], ['daily', 'Every day'], ['weekdays', 'Every weekday (Mon–Fri)'],
   ['weekly', 'Every week'], ['biweekly', 'Every 2 weeks'], ['monthly', 'Every month'], ['yearly', 'Every year']];
 
@@ -73,7 +74,16 @@ const ICONS = {
   bolt: '<path d="M13 2L3 14h9l-1 8 10-12h-9z"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
   drop: '<path d="M12 2.7l5.7 5.6a8 8 0 1 1-11.4 0z"/>',
-  note: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>'
+  note: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
+  clipboard: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/>',
+  truck: '<path d="M1 4h14v12H1zM15 9h4l3 3v4h-7z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/>',
+  box: '<path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
+  wrench: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
+  check: '<path d="M20 6L9 17l-5-5"/>',
+  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
+  alert: '<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h0"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>',
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>'
 };
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 
@@ -153,6 +163,10 @@ const S = {
   search: '',
   listDays: 60,
   events: new Map(),
+  items: new Map(),            // jobs, vans, van requests (kind: job | van | vanlog)
+  section: store.get('section', 'calendar'),
+  jobFilter: store.get('jobFilter', 'open'),
+  jobPerson: '',
   settings: null,
   settingsUpdatedAt: 0,
   feedKey: '',
@@ -162,13 +176,15 @@ const S = {
   local: Object.assign({ theme: 'auto', weekStart: 1, colorBy: 'person', solid: false, holidays: true, dayMode: 'people', workStart: 7, workEnd: 16 }, store.get('local', {}))
 };
 if (!VIEWS.some(([v]) => v === S.view)) S.view = 'month';
+if (!['calendar', 'jobs', 'vans'].includes(S.section)) S.section = 'calendar';
 
 const people = () => ((S.settings && S.settings.people && S.settings.people.length) ? S.settings.people : DEFAULT_PEOPLE);
 const activePeople = () => people().filter((p) => !p.hidden);
 const personColor = (name) => { const p = people().find((x) => x.name === name); return p ? p.color : '#78909c'; };
-const typeOf = (ev) => TYPE[ev.type] || TYPE.other;
+const typeOf = (ev) => TYPE[ev.type] || (ev.type === 'van' ? VAN_TYPE : TYPE.other);
 const titleOf = (ev) => {
-  if (ev.title) return ev.title;
+  const job = ev.jobId && S.items.get(ev.jobId);
+  if (ev.title) return (job && (job.status === 'done' || job.status === 'invoiced') ? '✓ ' : '') + ev.title;
   const ppl = ev.people || [];
   return typeOf(ev).label + (ppl.length && ppl.length <= 2 ? ' · ' + ppl.join(' & ') : '');
 };
@@ -240,6 +256,7 @@ function occurrences(from, to, { ignoreFilter = false } = {}) {
     if (ev.deleted || (!ignoreFilter && !passesFilter(ev))) continue;
     out.push(...expand(ev, from, to));
   }
+  if (!ignoreFilter) out.push(...vanMarkers(from, to));
   return out.sort(sortOcc);
 }
 function sortOcc(a, b) {
@@ -260,20 +277,21 @@ const sortForDay = (list) => list.slice().sort((a, b) => {
 
 /* ---------------- persistence of cache ---------------- */
 function saveCache() {
-  if (S.demo) { store.set('demo', { events: [...S.events.values()], settings: S.settings }); return; }
-  store.set('cache', { key: S.key, since: S.since, events: [...S.events.values()], settings: S.settings, settingsUpdatedAt: S.settingsUpdatedAt, feedKey: S.feedKey });
+  if (S.demo) { store.set('demo', { events: [...S.events.values()], items: [...S.items.values()], settings: S.settings }); return; }
+  store.set('cache', { key: S.key, since: S.since, events: [...S.events.values()], items: [...S.items.values()], itemsSynced: true, settings: S.settings, settingsUpdatedAt: S.settingsUpdatedAt, feedKey: S.feedKey });
 }
 function loadCache() {
   const c = store.get('cache', null);
   if (c && c.key === S.key) {
-    S.since = c.since || 0;
+    S.since = c.itemsSynced ? c.since || 0 : 0; // caches from v1 had no jobs/vans: do one full sync
     (c.events || []).forEach((e) => S.events.set(e.id, e));
+    (c.items || []).forEach((it) => S.items.set(it.id, it));
     S.settings = c.settings || null; S.settingsUpdatedAt = c.settingsUpdatedAt || 0; S.feedKey = c.feedKey || '';
   }
   S.outbox = store.get('outbox', []).filter((o) => o.k === S.key);
 }
 const saveOutbox = () => store.set('outbox', S.outbox);
-const pendingIds = () => new Set(S.outbox.map((o) => (o.event ? o.event.id : o.id)).filter(Boolean));
+const pendingIds = () => new Set(S.outbox.map((o) => (o.event ? o.event.id : o.item ? o.item.id : o.id)).filter(Boolean));
 
 /* ---------------- server API ---------------- */
 class ApiError extends Error { constructor(msg, code) { super(msg); this.code = code; } }
@@ -301,12 +319,14 @@ function demoApi(action, p) {
   if (action === 'sync') return Promise.resolve({ serverTime: now, events: [], feedKey: '' });
   if (action === 'save') { const e = Object.assign({}, p.event, { updatedAt: now, updatedBy: S.me }); return Promise.resolve({ event: e }); }
   if (action === 'delete') return Promise.resolve({ ok: true });
+  if (action === 'saveItem') return Promise.resolve({ item: Object.assign({}, p.item, { updatedAt: now, updatedBy: S.me }) });
+  if (action === 'deleteItem') return Promise.resolve({ ok: true });
   if (action === 'saveSettings') return Promise.resolve({ settings: p.settings, settingsUpdatedAt: now });
   return Promise.resolve({ ok: true });
 }
 function seedDemo() {
   const saved = store.get('demo', null);
-  if (saved && saved.events) { saved.events.forEach((e) => S.events.set(e.id, e)); S.settings = saved.settings || null; return; }
+  if (saved && saved.events) { saved.events.forEach((e) => S.events.set(e.id, e)); (saved.items || []).forEach((it) => S.items.set(it.id, it)); S.settings = saved.settings || null; if (saved.items) return; seedDemoItems(); saveCache(); return; }
   const ws = D.weekStart(D.today(), 1);
   const mk = (o) => Object.assign({ id: uid(), type: 'job', people: [], allDay: true, startTime: '', endTime: '', location: '', notes: '', repeat: { freq: 'none', until: '', exdates: [] }, createdBy: 'Kevin', createdAt: Date.now(), updatedAt: Date.now(), updatedBy: 'Kevin' }, o);
   [
@@ -321,6 +341,7 @@ function seedDemo() {
     mk({ title: 'WHMIS refresher', type: 'training', people: ['Neill', 'Josh'], start: D.add(ws, 9), end: D.add(ws, 9), allDay: false, startTime: '12:30', endTime: '15:00' }),
     mk({ title: '', type: 'off', people: ['Cal'], start: D.add(ws, 11), end: D.add(ws, 11) })
   ].forEach((e) => S.events.set(e.id, e));
+  seedDemoItems();
   saveCache();
 }
 
@@ -330,9 +351,10 @@ function setSync(state, error) { S.sync.state = state; if (error !== undefined) 
 
 function queue(op) {
   op.k = S.key;
-  if (op.op === 'save') {
-    const i = S.outbox.findIndex((o) => o.op === 'save' && o.event.id === op.event.id);
-    if (i >= 0) { op.base = S.outbox[i].base; S.outbox[i] = op; } else S.outbox.push(op);
+  if (op.op === 'save' || op.op === 'saveItem') {
+    const oid = op.event ? op.event.id : op.item.id;
+    const i = S.outbox.findIndex((o) => o.op === op.op && (o.event || o.item).id === oid);
+    if (i >= 0) { op.base = S.outbox[i].base; op.force = op.force || S.outbox[i].force; S.outbox[i] = op; } else S.outbox.push(op);
   } else S.outbox.push(op);
   saveOutbox();
   sync();
@@ -341,10 +363,44 @@ function queue(op) {
 async function flushOutbox() {
   while (S.outbox.length) {
     const op = S.outbox[0];
+    try {
+      await flushOne(op);
+    } catch (e) {
+      // Network trouble or auth: stop and retry later. A rejected change: drop it so it can't block everything else.
+      if (!e.code || e.code === 401) throw e;
+      op.tries = (op.tries || 0) + 1;
+      if (e.code === 400 || op.tries >= 3) {
+        S.outbox.shift(); saveOutbox();
+        toast('A change couldn’t be saved: ' + e.message, { error: true, ms: 7000 });
+        continue;
+      }
+      saveOutbox();
+      throw e;
+    }
+  }
+}
+async function flushOne(op) {
+  {
+    if (op.op === 'saveItem') {
+      const r = await api('saveItem', { item: op.item, baseUpdatedAt: op.base || 0, force: !!op.force });
+      S.outbox.shift(); saveOutbox();
+      if (r.conflict) {
+        if (op.item.kind === 'job') { S.items.set(r.current.id, r.current); itemConflictPrompt(op.item, r.current); }
+        else queue({ op: 'saveItem', item: op.item, base: r.current.updatedAt, force: true }); // van notes: last change wins
+        return;
+      }
+      S.items.set(r.item.id, r.item);
+      return;
+    }
+    if (op.op === 'deleteItem') {
+      await api('deleteItem', { id: op.id });
+      S.outbox.shift(); saveOutbox();
+      return;
+    }
     if (op.op === 'save') {
       const r = await api('save', { event: op.event, baseUpdatedAt: op.base || 0, force: !!op.force });
       S.outbox.shift(); saveOutbox();
-      if (r.conflict) { S.events.set(r.current.id, r.current); conflictPrompt(op.event, r.current); continue; }
+      if (r.conflict) { S.events.set(r.current.id, r.current); conflictPrompt(op.event, r.current); return; }
       S.events.set(r.event.id, r.event);
     } else if (op.op === 'delete') {
       await api('delete', { id: op.id });
@@ -372,8 +428,15 @@ async function sync() {
       let changed = false;
       if (!S.since) { // full load: replace everything not pending
         for (const id of [...S.events.keys()]) if (!pend.has(id)) S.events.delete(id);
+        if (r.items) for (const id of [...S.items.keys()]) if (!pend.has(id)) S.items.delete(id);
         changed = true;
       }
+      (r.items || []).forEach((it) => {
+        if (pend.has(it.id)) return;
+        const cur = S.items.get(it.id);
+        if (it.deleted) { if (cur) { S.items.delete(it.id); changed = true; } return; }
+        if (!cur || cur.updatedAt !== it.updatedAt) { S.items.set(it.id, it); changed = true; }
+      });
       (r.events || []).forEach((ev) => {
         if (pend.has(ev.id)) return;
         const cur = S.events.get(ev.id);
@@ -475,6 +538,8 @@ function shell() {
     <header class="topbar">
       <button class="btn icon ghost menu-btn" data-act="side" aria-label="Open side panel">${icon('menu')}</button>
       <div class="brand"><img class="brand-logo" src="./assets/mdk-logo.jpg" alt="MDK Electric Ltd."><div class="brand-title">Team Calendar<small>MDK Electric</small></div></div>
+      <div class="seg sections" role="tablist" aria-label="Section">${SECTIONS.map(([id, l, ic]) => `<button data-section="${id}" role="tab">${icon(ic)}<span>${l}</span><i class="badge" data-badge="${id}"></i></button>`).join('')}</div>
+      <h1 class="sec-title" id="secTitle"></h1>
       <div class="nav">
         <button class="btn sm" data-act="today">Today</button>
         <button class="btn icon ghost" data-act="prev" aria-label="Previous">${icon('left')}</button>
@@ -485,6 +550,7 @@ function shell() {
       <div class="top-right">
         <div class="seg viewseg" role="group" aria-label="View">${VIEWS.map(([v, l]) => `<button data-view="${v}">${l}</button>`).join('')}</div>
         <div class="search" id="searchBox">${icon('search')}<input id="q" type="search" placeholder="Search jobs, places…" autocomplete="off" aria-label="Search"></div>
+        <button class="btn icon ghost search-btn alt" data-act="search" aria-label="Search">${icon('search')}</button>
         <button class="sync" id="sync" data-act="syncinfo" title="Sync status"><span class="dot"></span><span class="lbl"></span></button>
         <button class="btn primary new-btn" data-act="new">${icon('plus')} New</button>
         <button class="btn icon ghost" data-act="settings" aria-label="Settings">${icon('sliders')}</button>
@@ -496,7 +562,8 @@ function shell() {
       <main class="main" id="main" tabindex="-1"></main>
     </div>
     <div class="scrim" data-act="side"></div>
-    <button class="fab" data-act="new" aria-label="New entry">${icon('plus')} New</button>`;
+    <button class="fab" data-act="new" aria-label="New entry">${icon('plus')} <span class="fab-l">New</span></button>
+    <nav class="tabbar" aria-label="Section">${SECTIONS.map(([id, l, ic]) => `<button data-section="${id}">${icon(ic)}<span>${l}</span><i class="badge" data-badge="${id}"></i></button>`).join('')}</nav>`;
   app().removeAttribute('aria-busy');
   app().classList.toggle('side-collapsed', !!store.get('sideCollapsed', false));
   const q = $('#q');
@@ -508,6 +575,15 @@ function shell() {
 
 function renderAll() {
   if (!$('#main')) return;
+  app().dataset.sec = S.section;
+  $$('[data-section]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.section === S.section)));
+  const badges = sectionBadges();
+  $$('[data-badge]').forEach((b) => { const n = badges[b.dataset.badge] || 0; b.textContent = n || ''; b.hidden = !n; });
+  const labels = { calendar: ['New', 'Search jobs, places…'], jobs: ['New job', 'Search jobs, customers…'], vans: ['Report', 'Search van notes…'] }[S.section];
+  $$('.new-btn, .fab').forEach((b) => { const l = b.querySelector('.fab-l'); if (l) l.textContent = labels[0]; else b.innerHTML = icon('plus') + ' ' + labels[0]; });
+  $('#q').placeholder = labels[1];
+  $('#secTitle').textContent = { jobs: 'Jobs', vans: 'Vans & trucks' }[S.section] || '';
+  if (S.section !== 'calendar') { renderMain(); paintSync(); return; }
   $('#rangeTitle').textContent = rangeTitle();
   $$('.viewseg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === S.view)));
   renderPeopleBar();
@@ -589,8 +665,9 @@ function renderSidebar() {
     </section>
     <section>
       <h3 class="side-h">Types</h3>
-      <div class="legend">${TYPES.map((t) => `<button data-type="${t.id}" aria-pressed="${!S.hiddenTypes.has(t.id)}"><span class="sw" style="background:${t.color}"></span>${t.label}</button>`).join('')}</div>
+      <div class="legend">${TYPES.concat([VAN_TYPE]).map((t) => `<button data-type="${t.id}" aria-pressed="${!S.hiddenTypes.has(t.id)}"><span class="sw" style="background:${t.color}"></span>${t.label}</button>`).join('')}</div>
     </section>
+    ${(() => { const r = recentActivity(6); return r.length ? `<section><h3 class="side-h">Recent changes</h3><ul class="activity">${r.map((a) => `<li><a href="#" ${a.open}><b>${esc(a.by || 'Someone')}</b> · ${esc(a.what)}</a><small>${esc(a.kind)} · ${esc(ago(a.at))}</small></li>`).join('')}</ul></section>` : ''; })()}
     <section class="meta-line">
       ${S.me ? `Using as <b>${esc(S.me)}</b> · <a href="#" class="link" data-act="whoami">change</a>` : `<a href="#" class="link" data-act="whoami">Tell us who you are</a>`}<br>
       ${S.demo ? 'Demo mode — changes stay on this device.' : 'Changes sync to everyone automatically.'}
@@ -601,16 +678,16 @@ function renderSidebar() {
 let lastViewKey = '';
 function renderMain() {
   const main = $('#main');
-  const viewKey = S.view + '|' + S.date + '|' + S.local.dayMode;
+  const viewKey = S.section + '|' + S.view + '|' + S.date + '|' + S.local.dayMode;
   const keepScroll = viewKey === lastViewKey || (S.view === 'week' && lastViewKey.startsWith('week')) || (S.view === 'day' && lastViewKey.startsWith('day'));
   const top = main.scrollTop, left = main.scrollLeft;
-  const html = { month: viewMonth, week: viewWeek, day: viewDay, crew: viewCrew, list: viewList }[S.view]();
+  const html = S.section === 'jobs' ? viewJobs() : S.section === 'vans' ? viewVans() : { month: viewMonth, week: viewWeek, day: viewDay, crew: viewCrew, list: viewList }[S.view]();
   main.innerHTML = (S.demo ? `<div class="warnbox" style="margin:10px 14px 0"><span><b>Demo mode.</b> This is sample data that stays on this device. Open the calendar from the MDK staff page to see the real shared schedule.</span></div>` : '') + html;
-  main.dataset.view = S.view;
+  main.dataset.cv = S.section === "calendar" ? S.view : S.section;
   const head = $('.tg-head', main);
   if (head) main.style.setProperty('--head-h', head.offsetHeight + 'px');
   if (keepScroll) { main.scrollTop = top; main.scrollLeft = left; }
-  else if (S.view === 'week' || S.view === 'day') {
+  else if (S.section === 'calendar' && (S.view === 'week' || S.view === 'day')) {
     const hour = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hour')) || 52;
     main.scrollTop = Math.max(0, (S.local.workStart - 1) * hour);
     main.scrollLeft = 0;
@@ -632,7 +709,7 @@ function chip(o, d, opts = {}) {
   const dots = isEveryone(ppl) ? '<span class="t all-b">All</span>' : S.local.colorBy === 'person' && others.length > (opts.person ? 0 : 1)
     ? `<span class="dots">${(opts.person ? others : others.slice(1)).map((p) => `<i style="background:${personColor(p)}" title="${esc(p)}"></i>`).join('')}</span>` : '';
   const tip = `${titleOf(ev)}${ev.allDay === false ? ' · ' + D.time12(ev.startTime) + '–' + D.time12(ev.endTime) : ''}${ppl.length ? ' · ' + ppl.join(', ') : ''}${ev.location ? ' · ' + ev.location : ''}`;
-  return `<button class="${cls.join(' ')}" style="--c:${c}" data-open="${esc(o.key)}" draggable="true" data-drag="${esc(o.key)}" ${opts.person ? `data-from="${esc(opts.person)}"` : ''} title="${esc(tip)}">${time}<span class="ti">${esc(titleOf(ev))}${!opts.person && S.filter == null && ppl.length && S.local.colorBy === 'type' ? ' · ' + esc(ppl.map(initials).join(' ')) : ''}</span>${dots}</button>`;
+  return `<button class="${cls.join(' ')}" style="--c:${c}" data-open="${esc(o.key)}" ${ev.synthetic ? '' : `draggable="true" data-drag="${esc(o.key)}"`} ${opts.person ? `data-from="${esc(opts.person)}"` : ''} title="${esc(tip)}">${time}<span class="ti">${esc(titleOf(ev))}${!opts.person && S.filter == null && ppl.length && S.local.colorBy === 'type' ? ' · ' + esc(ppl.map(initials).join(' ')) : ''}</span>${dots}</button>`;
 }
 
 function viewMonth() {
@@ -742,7 +819,7 @@ function viewCrew() {
   let html = `<div class="crew"><div class="crew-grid"><div class="hd corner">Crew</div>${days.map((d) => `<div class="hd ${d === today ? 'today' : ''}"><div class="dw">${D.label(d, { weekday: 'short' })}</div><div class="dn">${+d.slice(8)}</div>${holidayOn(d) ? `<div class="hol">${esc(holidayOn(d))}</div>` : ''}</div>`).join('')}`;
   rows.forEach((row) => {
     const mine = occ.filter(row.match);
-    const booked = days.filter((d) => onDay(mine, d).some((o) => !isAway(o.ev))).length;
+    const booked = days.filter((d) => onDay(mine, d).some((o) => !isAway(o.ev) && !o.ev.synthetic)).length;
     const away = days.filter((d) => onDay(mine, d).some((o) => isAway(o.ev))).length;
     html += `<div class="who ${row.name ? '' : 'unassigned'}" style="--c:${row.color}"><span class="av">${row.name ? esc(initials(row.name)) : '?'}</span><span>${row.name ? esc(row.name) : 'Unassigned'}<small>${booked ? booked + (booked === 1 ? ' day booked' : ' days booked') : 'Open week'}${away ? ' · ' + away + ' away' : ''}</small></span></div>`;
     days.forEach((d) => {
@@ -867,6 +944,7 @@ function openEditor(opts = {}) {
       ${recurring ? `<span class="tag">${icon('repeat')} Repeating</span>` : ''}
       <button class="btn icon ghost" data-x="close" aria-label="Close">${icon('x')}</button></div>
     <form class="modal-b" id="evform" autocomplete="off">
+      ${series && series.jobId && S.items.get(series.jobId) ? (() => { const jb = S.items.get(series.jobId); const js = JOB_STATUS[jb.status] || JOB_STATUS.new; return `<div class="job-link">${icon('clipboard')}<span>Part of job <b>${esc(jb.title || jb.customer)}</b> · <span class="status-pill" style="--c:${js.color}">${js.label}</span></span><button type="button" class="btn sm" data-x="openjob">Open job</button></div>`; })() : ''}
       <input class="inp title" name="title" placeholder="${esc(typeOf(ev).label)} — add a title (job, customer…)" value="${esc(ev.title)}" list="dl-titles" ${isNew ? 'autofocus' : ''} maxlength="140">
       <div class="field"><span class="lab">Type</span><div class="pick types" id="pickType">${TYPES.map((t) => `<button type="button" style="--c:${t.color}" data-tval="${t.id}" aria-pressed="${ev.type === t.id}"><span class="sw"></span>${t.label}</button>`).join('')}</div></div>
       <div class="field"><span class="lab" style="display:flex;gap:10px;align-items:center">Who <span style="margin-left:auto;display:flex;gap:4px"><button type="button" class="btn sm ghost" data-pp="all">Everyone</button><button type="button" class="btn sm ghost" data-pp="none">Clear</button></span></span>
@@ -948,6 +1026,7 @@ function openEditor(opts = {}) {
     },
     async onClick(x, close) {
       if (x === 'close') return close();
+      if (x === 'openjob') { close(); return openJobEditor(series.jobId); }
       if (x === 'dup') { close(); return openEditor({ copy: Object.assign(read(), { repeat: { freq: 'none', until: '', exdates: [] } }) }); }
       if (x === 'delete') {
         let scope = 'all';
@@ -1039,12 +1118,18 @@ function deleteScoped(series, occ, scope) {
   const before = JSON.parse(JSON.stringify(series));
   if (scope === 'one') saveEvent(Object.assign({}, series, { repeat: Object.assign({}, series.repeat, { exdates: [...new Set([...(series.repeat.exdates || []), occ])] }) }));
   else if (scope === 'following' && occ > series.start) saveEvent(Object.assign({}, series, { repeat: Object.assign({}, series.repeat, { until: D.add(occ, -1) }) }));
-  else { S.events.delete(series.id); queue({ op: 'delete', id: series.id }); renderAll(); }
+  else {
+    S.events.delete(series.id); queue({ op: 'delete', id: series.id });
+    const jb = series.jobId && S.items.get(series.jobId);
+    if (jb) saveItem(Object.assign({}, jb, { eventId: '', status: jb.status === 'scheduled' ? 'new' : jb.status }));
+    renderAll();
+  }
   toast('Deleted', { action: 'Undo', onAction: () => saveEvent(before, true) });
 }
 
 /* move an occurrence by drag & drop */
 async function moveOcc(key, toDate, fromPerson, toPerson, toTime) {
+  if (key.startsWith('van:')) return;
   const { id, occ } = parseKey(key);
   const series = S.events.get(id); if (!series) return;
   const delta = D.diff(occ, toDate);
@@ -1134,8 +1219,10 @@ function openSettings(tab = 'look') {
           <span>• Tap a name tab to see just that person. Tap more names to add them, or <b>All</b> to see everyone.</span>
           <span>• <b>Crew</b> shows everyone's week side by side. Drag an entry to another day or person to move it (computer).</span>
           <span>• <b>Day → By person</b> shows one column per person.</span>
+          <span>• <b>Jobs:</b> add a job, pick the crew and dates, and it lands on their calendars. Drag it on the calendar to reschedule.</span>
+          <span>• <b>Vans:</b> tap the circle next to a request to move it along (Needed → Ordered → Restocked). The Material list gathers every van’s needs for the supplier run.</span>
           <span>• Entries sync to every device within about ${CFG.POLL_SECONDS || 15} seconds. Works offline — changes upload when you're back online.</span>
-          <span>• Keys: <span class="kbd">T</span> today · <span class="kbd">M</span> <span class="kbd">W</span> <span class="kbd">D</span> <span class="kbd">C</span> <span class="kbd">L</span> views · <span class="kbd">N</span> new · <span class="kbd">←</span> <span class="kbd">→</span> move · <span class="kbd">/</span> search</span>
+          <span>• Keys: <span class="kbd">T</span> today · <span class="kbd">M</span> <span class="kbd">W</span> <span class="kbd">D</span> <span class="kbd">C</span> <span class="kbd">L</span> views · <span class="kbd">J</span> jobs · <span class="kbd">V</span> vans · <span class="kbd">N</span> new · <span class="kbd">←</span> <span class="kbd">→</span> move · <span class="kbd">/</span> search</span>
         </div></div>`;
   };
   let team = JSON.parse(JSON.stringify(people()));
@@ -1228,7 +1315,12 @@ function jumpTo() {
   });
 }
 function go(d, view) { S.date = d; S.selected = d; S.mini = null; if (view) setView(view, true); renderAll(); }
-function setView(v, silent) { S.view = v; store.set('view', v); if (!silent) renderAll(); }
+function setView(v, silent) { S.view = v; store.set('view', v); if (S.section !== 'calendar') setSection('calendar', true); if (!silent) renderAll(); }
+function setSection(sec, silent) {
+  S.section = sec; store.set('section', sec); closeSide();
+  const b = $('#searchBox'); if (b) b.classList.remove('open');
+  if (!silent) { renderAll(); const m = $('#main'); if (m) m.scrollTop = 0; }
+}
 function step(dir) {
   const v = S.view;
   const d = v === 'month' ? D.addMonths(S.date, dir) : v === 'day' ? D.add(S.date, dir) : v === 'list' ? D.add(S.date, dir * 30) : D.add(S.date, dir * 7);
@@ -1265,13 +1357,534 @@ function lockOut(msg) {
 }
 
 /* ======================================================================
+   SHARED ITEMS: JOBS, VANS, VAN REQUESTS
+   ====================================================================== */
+const itemsOf = (kind) => [...S.items.values()].filter((it) => it.kind === kind && !it.deleted);
+function saveItem(it, force) {
+  const prev = S.items.get(it.id);
+  const clean = JSON.parse(JSON.stringify(it));
+  delete clean.updatedAt; delete clean.updatedBy; delete clean.deleted;
+  if (!clean.createdBy) { clean.createdBy = S.me; clean.createdAt = Date.now(); }
+  S.items.set(it.id, Object.assign({}, clean, { updatedAt: prev ? prev.updatedAt : 0, updatedBy: S.me }));
+  queue({ op: 'saveItem', item: clean, base: prev ? prev.updatedAt || 0 : 0, force: !!force });
+  renderAll();
+}
+function deleteItem(id) { S.items.delete(id); queue({ op: 'deleteItem', id }); renderAll(); }
+function itemConflictPrompt(mine, theirs) {
+  renderAll();
+  openModal(`<div class="modal-h"><h2>Someone else changed this job</h2></div>
+    <div class="modal-b"><p style="margin:0"><b>${esc(theirs.updatedBy || 'Someone')}</b> edited <b>${esc(theirs.title || 'this job')}</b> ${esc(ago(theirs.updatedAt))}, while you were making your changes.</p></div>
+    <div class="modal-f"><span class="sp"></span><button class="btn" data-x="theirs">Keep theirs</button><button class="btn primary" data-x="mine">Use mine</button></div>`,
+  { size: 'sm', onClick(x, close) { if (x === 'mine') saveItem(mine, true); close(); } });
+}
+
+/* ---------------- vans ---------------- */
+const VAN_DRIVERS = ['Dustin', 'Kevin', 'Mike', 'Michael', 'Cal', 'Scott', 'Justin', 'Noah'];
+const DEFAULT_VANS = VAN_DRIVERS.map((d, i) => ({ id: 'van_' + d.toLowerCase(), kind: 'van', name: d + '’s van', driver: d, unit: '', plate: '', model: '', odometer: '', nextService: '', safetyDue: '', notes: '', outOfService: false, hidden: false, order: i }));
+const LOG_TYPES = {
+  material: { label: 'Material', icon: 'box', color: '#2563eb', states: ['Needed', 'Ordered', 'Restocked'] },
+  repair: { label: 'Repair', icon: 'wrench', color: '#dc2626', states: ['Reported', 'Booked in', 'Fixed'] },
+  service: { label: 'Maintenance', icon: 'clock', color: '#d97706', states: ['Due', 'Booked', 'Done'] },
+  note: { label: 'Note', icon: 'note', color: '#64748b', states: ['Open', 'Seen', 'Closed'] }
+};
+const STATUS_IDX = { open: 0, progress: 1, done: 2 };
+const NEXT_STATUS = { open: 'progress', progress: 'done', done: 'open' };
+function vans(includeHidden) {
+  const saved = new Map(itemsOf('van').map((v) => [v.id, v]));
+  const list = DEFAULT_VANS.map((d) => saved.get(d.id) || d);
+  saved.forEach((v, id) => { if (!DEFAULT_VANS.some((d) => d.id === id)) list.push(v); });
+  const mine = (v) => (S.me && v.driver === S.me ? -1 : 0);
+  return list.filter((v) => includeHidden || !v.hidden).sort((a, b) => mine(a) - mine(b) || (a.order ?? 99) - (b.order ?? 99) || a.name.localeCompare(b.name));
+}
+const vanById = (id) => vans(true).find((v) => v.id === id);
+const vanLogs = (vanId) => itemsOf('vanlog').filter((l) => l.vanId === vanId);
+const openLogs = (vanId) => vanLogs(vanId).filter((l) => l.status !== 'done').sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || (a.createdAt || 0) - (b.createdAt || 0));
+function serviceDue(v) {
+  const today = D.today(), soon = D.add(today, 14), out = [];
+  [['nextService', 'Service'], ['safetyDue', 'Safety / plate renewal']].forEach(([k, label]) => {
+    if (v[k] && v[k] <= soon) out.push({ label, date: v[k], overdue: v[k] < today, days: D.diff(today, v[k]) });
+  });
+  return out;
+}
+function vanStatus(v) {
+  const logs = openLogs(v.id);
+  if (v.outOfService) return { id: 'out', label: 'Out of service', color: '#991b1b' };
+  if (logs.some((l) => l.type === 'repair')) return { id: 'repair', label: 'Needs repair', color: '#dc2626' };
+  if (logs.some((l) => l.type === 'material')) return { id: 'material', label: 'Needs material', color: '#2563eb' };
+  if (serviceDue(v).length || logs.some((l) => l.type === 'service')) return { id: 'service', label: 'Service due', color: '#d97706' };
+  return { id: 'ok', label: 'Good to go', color: '#16a34a' };
+}
+function logSearchOk(l, v) {
+  if (!S.search) return true;
+  const hay = [l.text, l.qty, v && v.name, v && v.driver, LOG_TYPES[l.type] && LOG_TYPES[l.type].label].join(' ').toLowerCase();
+  return S.search.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
+}
+function addLog(vanId, type, text, extra = {}) {
+  text = String(text || '').trim();
+  if (!text) return;
+  saveItem(Object.assign({ id: uid(), kind: 'vanlog', vanId, type, text, qty: '', urgent: false, status: 'open', createdBy: S.me, createdAt: Date.now() }, extra));
+}
+function cycleLog(id) {
+  const l = S.items.get(id); if (!l) return;
+  const status = NEXT_STATUS[l.status || 'open'];
+  saveItem(Object.assign({}, l, { status, doneBy: status === 'done' ? S.me : '', doneAt: status === 'done' ? Date.now() : 0 }));
+  if (status === 'done') toast((LOG_TYPES[l.type] || LOG_TYPES.note).states[2] + ': ' + l.text, { action: 'Undo', onAction: () => saveItem(Object.assign({}, S.items.get(id) || l, { status: l.status, doneBy: '', doneAt: 0 })) });
+}
+function logRow(l, opts = {}) {
+  const t = LOG_TYPES[l.type] || LOG_TYPES.note;
+  const st = STATUS_IDX[l.status || 'open'];
+  return `<div class="log-row ${l.status === 'done' ? 'done' : ''} ${pendingIds().has(l.id) ? 'pending' : ''}" style="--c:${t.color}">
+    <button class="log-state s${st}" data-log-cycle="${esc(l.id)}" title="Tap to change: ${t.states.join(' → ')}">${st === 2 ? icon('check') : st === 1 ? '<i class="half"></i>' : ''}</button>
+    <div class="log-main"><div class="log-text">${l.urgent ? '<b class="urgent">URGENT</b> ' : ''}${esc(l.text)}${l.qty ? ` <span class="qty">× ${esc(l.qty)}</span>` : ''}</div>
+      <div class="log-meta"><span class="tag" style="color:${t.color}">${icon(t.icon)} ${t.label} · ${t.states[st]}</span>${opts.van ? `<span>${esc(opts.van.name)}</span>` : ''}<span>${esc(l.createdBy || 'someone')} · ${esc(ago(l.createdAt))}</span>${l.status === 'done' && l.doneBy ? `<span>✓ ${esc(l.doneBy)} ${esc(ago(l.doneAt))}</span>` : ''}</div></div>
+    ${opts.del ? `<button class="btn icon ghost sm" data-log-del="${esc(l.id)}" aria-label="Delete">${icon('trash')}</button>` : ''}
+  </div>`;
+}
+
+function viewVans() {
+  const list = vans();
+  const all = list.map((v) => ({ v, st: vanStatus(v), logs: openLogs(v.id).filter((l) => logSearchOk(l, v)), due: serviceDue(v) }));
+  const cnt = (id) => all.filter((x) => x.st.id === id).length;
+  const materials = itemsOf('vanlog').filter((l) => l.type === 'material' && l.status !== 'done' && vanById(l.vanId) && !vanById(l.vanId).hidden);
+  const visible = S.search ? all.filter((x) => x.logs.length || [x.v.name, x.v.driver, x.v.unit, x.v.plate].join(' ').toLowerCase().includes(S.search.toLowerCase())) : all;
+  return `<div class="page">
+    <div class="page-head">
+      <div class="stat-row">
+        <div class="stat" style="--c:#dc2626"><b>${cnt('repair') + cnt('out')}</b><span>need repair</span></div>
+        <div class="stat" style="--c:#2563eb"><b>${cnt('material')}</b><span>need material</span></div>
+        <div class="stat" style="--c:#d97706"><b>${cnt('service')}</b><span>service due</span></div>
+        <div class="stat" style="--c:#16a34a"><b>${cnt('ok')}</b><span>good to go</span></div>
+      </div>
+      <div class="page-actions">
+        <button class="btn" data-act="material-list">${icon('box')} Material list${materials.length ? ` <i class="badge">${materials.length}</i>` : ''}</button>
+        <button class="btn" data-act="add-van">${icon('plus')} Add van</button>
+      </div>
+    </div>
+    ${visible.length ? `<div class="van-grid">${visible.map(({ v, st, logs, due }) => {
+      const c = personColor(v.driver);
+      const shown = logs.slice(0, 5);
+      return `<article class="van-card" style="--c:${c};--s:${st.color}">
+        <header data-van-open="${esc(v.id)}">
+          <span class="van-ic">${icon('truck')}</span>
+          <div class="van-h"><b>${esc(v.name)}</b><small>${esc([v.driver ? 'Driver: ' + v.driver : 'No driver', v.unit && 'Unit ' + v.unit, v.plate].filter(Boolean).join(' · '))}</small></div>
+          <span class="status-pill" style="--c:${st.color}">${st.label}</span>
+        </header>
+        ${due.length ? `<div class="van-due">${due.map((d) => `<span class="${d.overdue ? 'over' : ''}">${icon('clock')} ${esc(d.label)} ${d.overdue ? 'overdue since' : 'due'} ${esc(D.label(d.date, { month: 'short', day: 'numeric' }))}</span>`).join('')}</div>` : ''}
+        <div class="van-logs">${shown.length ? shown.map((l) => logRow(l)).join('') : `<p class="van-empty">${icon('check')} Nothing needed</p>`}
+          ${logs.length > shown.length ? `<button class="more" data-van-open="${esc(v.id)}">+${logs.length - shown.length} more</button>` : ''}</div>
+        <form class="quick-add" data-van="${esc(v.id)}" autocomplete="off">
+          <div class="seg qa-type"><button type="button" data-qa="material" aria-pressed="true">${icon('box')} Material</button><button type="button" data-qa="repair" aria-pressed="false">${icon('wrench')} Repair</button></div>
+          <div class="qa-row"><input class="inp" name="text" placeholder="e.g. 14/2 wire, 2 boxes of marettes…" maxlength="200"><button class="btn primary" type="submit" aria-label="Add">${icon('plus')}</button></div>
+        </form>
+      </article>`;
+    }).join('')}</div>` : `<div class="empty"><b>No vans match</b>Try a different search.</div>`}
+  </div>`;
+}
+
+function openVanEditor(vanId) {
+  const isNew = !vanId;
+  const v = JSON.parse(JSON.stringify(isNew ? { id: 'van_' + uid().slice(0, 10), kind: 'van', name: '', driver: '', unit: '', plate: '', model: '', odometer: '', nextService: '', safetyDue: '', notes: '', outOfService: false, hidden: false, order: 50 } : vanById(vanId)));
+  if (!v) return;
+  const history = () => vanLogs(v.id).filter((l) => l.status === 'done').sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)).slice(0, 25);
+  const body = () => `
+    <div class="row"><div class="field"><label>Van name</label><input class="inp" name="name" value="${esc(v.name)}" placeholder="e.g. Van 3 / Dustin’s van" maxlength="60"></div>
+      <div class="field"><label>Driver</label><select class="inp" name="driver"><option value="">No driver</option>${people().map((p) => `<option ${p.name === v.driver ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div></div>
+    <div class="row3"><div class="field"><label>Unit #</label><input class="inp" name="unit" value="${esc(v.unit)}" maxlength="20"></div>
+      <div class="field"><label>Plate</label><input class="inp" name="plate" value="${esc(v.plate)}" maxlength="20"></div>
+      <div class="field"><label>Odometer (km)</label><input class="inp" name="odometer" value="${esc(v.odometer)}" inputmode="numeric" maxlength="12"></div></div>
+    <div class="field"><label>Make / model / year</label><input class="inp" name="model" value="${esc(v.model)}" placeholder="e.g. 2021 Ford Transit 250" maxlength="80"></div>
+    <div class="row"><div class="field"><label>Next oil change / service</label><input class="inp" type="date" name="nextService" value="${esc(v.nextService)}"></div>
+      <div class="field"><label>Safety / plate renewal due</label><input class="inp" type="date" name="safetyDue" value="${esc(v.safetyDue)}"></div></div>
+    <div class="field"><label>Notes</label><textarea class="inp" name="notes" placeholder="Shelving, ladder rack, fuel card, anything to know" maxlength="2000">${esc(v.notes)}</textarea></div>
+    <label class="switch"><input type="checkbox" name="outOfService" ${v.outOfService ? 'checked' : ''}> Out of service (in the shop)</label>
+    ${isNew ? '' : `<div class="field"><span class="lab">Open requests</span><div id="vanOpen" class="log-list"></div>
+      <form class="quick-add inline" data-van="${esc(v.id)}" autocomplete="off">
+        <div class="seg qa-type"><button type="button" data-qa="material" aria-pressed="true">${icon('box')} Material</button><button type="button" data-qa="repair" aria-pressed="false">${icon('wrench')} Repair</button><button type="button" data-qa="service" aria-pressed="false">${icon('clock')} Maintenance</button><button type="button" data-qa="note" aria-pressed="false">${icon('note')} Note</button></div>
+        <div class="qa-row"><input class="inp" name="text" placeholder="What’s needed?" maxlength="200"><input class="inp qty" name="qty" placeholder="Qty" maxlength="12"><label class="switch sm" title="Urgent"><input type="checkbox" name="urgent"> Urgent</label><button class="btn primary" type="submit">${icon('plus')} Add</button></div>
+      </form></div>
+      <details class="field"><summary class="lab" style="cursor:pointer">${icon('history')} History (${history().length})</summary><div id="vanHist" class="log-list"></div></details>`}`;
+  const paintLogs = (ov) => {
+    const o = $('#vanOpen', ov), h = $('#vanHist', ov);
+    if (o) o.innerHTML = openLogs(v.id).map((l) => logRow(l, { del: true })).join('') || '<p class="meta-line" style="margin:4px 0">Nothing open.</p>';
+    if (h) h.innerHTML = history().map((l) => logRow(l, { del: true })).join('') || '<p class="meta-line" style="margin:4px 0">No history yet.</p>';
+  };
+  openModal(`<div class="modal-h"><h2>${isNew ? 'Add a van' : esc(v.name)}</h2><button class="btn icon ghost" data-x="close" aria-label="Close">${icon('x')}</button></div>
+    <form class="modal-b" id="vanform" autocomplete="off">${body()}</form>
+    <div class="modal-f">${isNew ? '' : `<button class="btn danger" data-x="remove">${icon('trash')} Remove van</button>`}<span class="sp"></span><button class="btn" data-x="close">Close</button><button class="btn primary" data-x="save">Save van</button></div>`, {
+    onMount(ov, close) {
+      paintLogs(ov);
+      ov._repaint = () => paintLogs(ov);
+      ov.addEventListener('click', (e) => {
+        const d = e.target.closest('[data-log-del]');
+        if (d) { e.preventDefault(); const l = S.items.get(d.dataset.logDel); if (l) { deleteItem(l.id); toast('Removed', { action: 'Undo', onAction: () => saveItem(l, true) }); } paintLogs(ov); }
+        const c = e.target.closest('[data-log-cycle]');
+        if (c) { e.preventDefault(); e.stopPropagation(); cycleLog(c.dataset.logCycle); paintLogs(ov); }
+      });
+    },
+    onClick(x, close, ov) {
+      if (x === 'close') return close();
+      if (x === 'remove') {
+        return choose('Remove this van?', 'It disappears from the Vans page. Its history is kept.', [{ id: 'y', label: 'Remove van', cls: 'danger solid' }]).then((y) => { if (y) { saveItem(Object.assign({}, v, { hidden: true })); close(); toast('Van removed'); } });
+      }
+      if (x === 'save') {
+        const f = $('#vanform', ov);
+        ['name', 'driver', 'unit', 'plate', 'odometer', 'model', 'nextService', 'safetyDue', 'notes'].forEach((k) => { v[k] = f.elements[k].value.trim(); });
+        v.outOfService = f.elements.outOfService.checked;
+        if (!v.name) v.name = v.driver ? v.driver + '’s van' : 'Van';
+        saveItem(v); close(); toast('Van saved');
+      }
+    }
+  });
+}
+
+function openMaterialList() {
+  const build = () => {
+    const logs = itemsOf('vanlog').filter((l) => l.type === 'material' && l.status !== 'done');
+    const byVan = vans().map((v) => ({ v, logs: logs.filter((l) => l.vanId === v.id) })).filter((x) => x.logs.length);
+    return { byVan, count: logs.length };
+  };
+  const text = () => build().byVan.map(({ v, logs }) => `${v.name}${v.driver ? ' (' + v.driver + ')' : ''}:\n` + logs.map((l) => `- ${l.text}${l.qty ? ' x ' + l.qty : ''}${l.status === 'progress' ? ' [ordered]' : ''}${l.urgent ? ' [URGENT]' : ''}`).join('\n')).join('\n\n');
+  const paint = (ov) => {
+    const { byVan } = build();
+    $('.modal-b', ov).innerHTML = byVan.length ? byVan.map(({ v, logs }) => `<div class="field"><span class="lab" style="display:flex;align-items:center;gap:8px"><span class="dotc" style="background:${personColor(v.driver)}"></span>${esc(v.name)}${v.driver ? ` · ${esc(v.driver)}` : ''}</span><div class="log-list">${logs.map((l) => logRow(l)).join('')}</div></div>`).join('')
+      : '<div class="empty" style="padding:30px"><b>All stocked up</b>No material requests right now.</div>';
+  };
+  openModal(`<div class="modal-h"><h2>${icon('box')} Material list</h2><button class="btn icon ghost" data-x="close" aria-label="Close">${icon('x')}</button></div>
+    <div class="modal-b"></div>
+    <div class="modal-f"><span class="meta-line">Tap the circle to mark Ordered, then Restocked.</span><span class="sp"></span>
+      <button class="btn" data-x="copy">${icon('copy')} Copy list</button>${navigator.share ? `<button class="btn" data-x="share">${icon('share')} Share</button>` : ''}</div>`, {
+    onMount(ov) {
+      paint(ov);
+      ov.addEventListener('click', (e) => { const c = e.target.closest('[data-log-cycle]'); if (c) { e.stopPropagation(); cycleLog(c.dataset.logCycle); paint(ov); } });
+    },
+    onClick(x, close) {
+      if (x === 'close') return close();
+      const t = 'MDK van material list — ' + D.label(D.today(), { weekday: 'short', month: 'short', day: 'numeric' }) + '\n\n' + (text() || 'Nothing needed.');
+      if (x === 'copy') navigator.clipboard.writeText(t).then(() => toast('List copied — paste it in a text or email'), () => toast('Couldn’t copy on this device', { error: true }));
+      if (x === 'share') navigator.share({ title: 'MDK material list', text: t }).catch(() => {});
+    }
+  });
+}
+
+/* quick "report a van issue" (phone FAB on the Vans page) */
+function openReport() {
+  const list = vans();
+  const mineV = list.find((v) => v.driver === S.me) || list[0];
+  openModal(`<div class="modal-h"><h2>Report for a van</h2><button class="btn icon ghost" data-x="close" aria-label="Close">${icon('x')}</button></div>
+    <form class="modal-b" id="repform" autocomplete="off">
+      <div class="field"><label>Van</label><select class="inp" name="van">${list.map((v) => `<option value="${esc(v.id)}" ${v === mineV ? 'selected' : ''}>${esc(v.name)}${v.driver ? ' — ' + esc(v.driver) : ''}</option>`).join('')}</select></div>
+      <div class="field"><span class="lab">What kind?</span><div class="pick types" id="repType">${Object.entries(LOG_TYPES).map(([k, t], i) => `<button type="button" style="--c:${t.color}" data-rt="${k}" aria-pressed="${i === 0}"><span class="sw"></span>${t.label}</button>`).join('')}</div></div>
+      <div class="field"><label>Details</label><input class="inp" name="text" placeholder="e.g. 2 boxes 1/2″ EMT connectors" maxlength="200" autofocus></div>
+      <div class="row"><div class="field"><label>Qty (optional)</label><input class="inp" name="qty" maxlength="12"></div><label class="switch" style="align-self:end;padding-bottom:10px"><input type="checkbox" name="urgent"> Urgent</label></div>
+    </form>
+    <div class="modal-f"><span class="sp"></span><button class="btn" data-x="close">Cancel</button><button class="btn primary" data-x="save">Add</button></div>`, {
+    size: 'sm',
+    onMount(ov) {
+      $('#repType', ov).addEventListener('click', (e) => { const b = e.target.closest('[data-rt]'); if (b) $$('#repType button', ov).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
+      $('#repform', ov).addEventListener('submit', (e) => { e.preventDefault(); ov.querySelector('[data-x="save"]').click(); });
+    },
+    onClick(x, close, ov) {
+      if (x === 'close') return close();
+      const f = $('#repform', ov);
+      if (!f.elements.text.value.trim()) return f.elements.text.focus();
+      addLog(f.elements.van.value, $('#repType [aria-pressed="true"]', ov).dataset.rt, f.elements.text.value, { qty: f.elements.qty.value.trim(), urgent: f.elements.urgent.checked });
+      close(); toast('Added to ' + (vanById(f.elements.van.value) || {}).name);
+    }
+  });
+}
+
+/* ---------------- jobs ---------------- */
+const JOB_STATUSES = [
+  ['new', 'To schedule', '#64748b'], ['scheduled', 'Scheduled', '#2563eb'], ['progress', 'In progress', '#0891b2'],
+  ['waiting', 'Waiting on material', '#d97706'], ['done', 'Complete', '#16a34a'], ['invoiced', 'Invoiced', '#7c3aed']
+];
+const JOB_STATUS = Object.fromEntries(JOB_STATUSES.map(([id, label, color]) => [id, { id, label, color }]));
+const JOB_TYPES = ['job', 'service', 'quote', 'inspection', 'other'];
+const JOB_FILTERS = [['open', 'Open'], ['unscheduled', 'Not scheduled'], ['scheduled', 'Scheduled'], ['progress', 'In progress'], ['waiting', 'Waiting'], ['done', 'Complete'], ['all', 'All']];
+const isClosed = (j) => j.status === 'done' || j.status === 'invoiced';
+const jobEvent = (j) => (j.eventId ? S.events.get(j.eventId) || null : null);
+const jobPeople = (j) => { const ev = jobEvent(j); return ev ? ev.people || [] : j.assigned || []; };
+function jobWhen(j) {
+  const ev = jobEvent(j);
+  if (!ev) return '';
+  const d = (x) => D.label(x, { weekday: 'short', month: 'short', day: 'numeric' });
+  const dates = ev.start === ev.end ? d(ev.start) : `${d(ev.start)} – ${D.label(ev.end, { weekday: 'short', month: 'short', day: 'numeric' })}`;
+  return dates + (ev.allDay === false ? ` · ${D.time12(ev.startTime)}–${D.time12(ev.endTime)}` : '');
+}
+function jobMatches(j, f) {
+  if (f === 'all') return true;
+  if (f === 'open') return !isClosed(j);
+  if (f === 'unscheduled') return !isClosed(j) && !jobEvent(j);
+  if (f === 'scheduled') return !isClosed(j) && !!jobEvent(j);
+  if (f === 'done') return isClosed(j);
+  return j.status === f;
+}
+function jobSearchOk(j) {
+  if (!S.search) return true;
+  const hay = [j.title, j.customer, j.address, j.phone, j.ref, j.description, j.notes, jobPeople(j).join(' ')].join(' ').toLowerCase();
+  return S.search.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
+}
+function viewJobs() {
+  const jobs = itemsOf('job');
+  const base = jobs.filter((j) => jobSearchOk(j) && (!S.jobPerson || jobPeople(j).includes(S.jobPerson)));
+  const counts = Object.fromEntries(JOB_FILTERS.map(([f]) => [f, base.filter((j) => jobMatches(j, f)).length]));
+  const list = base.filter((j) => jobMatches(j, S.jobFilter));
+  const pr = { urgent: 0, high: 1, normal: 2 };
+  const startOf = (j) => { const ev = jobEvent(j); return ev ? ev.start : '0000'; };
+  list.sort((a, b) => (pr[a.priority] ?? 2) - (pr[b.priority] ?? 2) || startOf(a).localeCompare(startOf(b)) || (b.createdAt || 0) - (a.createdAt || 0));
+  const groups = (S.jobFilter === 'open' || S.jobFilter === 'all')
+    ? JOB_STATUSES.map(([id, label, color]) => ({ label, color, jobs: list.filter((j) => (id === 'new' ? (j.status === 'new' || !j.status) : j.status === id)) })).filter((g) => g.jobs.length)
+    : [{ label: '', jobs: list }];
+  return `<div class="page">
+    <div class="page-head">
+      <div class="chips" role="tablist">${JOB_FILTERS.map(([f, l]) => `<button class="chipf" data-job-filter="${f}" aria-pressed="${S.jobFilter === f}">${l}${counts[f] ? ` <i>${counts[f]}</i>` : ''}</button>`).join('')}</div>
+      <div class="page-actions">
+        <select class="inp sm" id="jobPerson" aria-label="Filter by person"><option value="">Everyone</option>${activePeople().map((p) => `<option ${S.jobPerson === p.name ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+        <button class="btn primary" data-act="new-job">${icon('plus')} New job</button>
+      </div>
+    </div>
+    ${list.length ? groups.map((g) => `${g.label ? `<h3 class="group-h" style="--c:${g.color}"><span></span>${g.label} <i>${g.jobs.length}</i></h3>` : ''}<div class="job-grid">${g.jobs.map(jobCard).join('')}</div>`).join('')
+      : `<div class="empty"><b>${jobs.length ? 'No jobs here' : 'No jobs yet'}</b>${jobs.length ? 'Try another filter.' : 'Add a job, assign the crew, and it goes straight onto their calendars.'}<br><br><button class="btn primary" data-act="new-job">${icon('plus')} New job</button></div>`}
+  </div>`;
+}
+function jobCard(j) {
+  const st = JOB_STATUS[j.status] || JOB_STATUS.new;
+  const when = jobWhen(j);
+  const ppl = jobPeople(j);
+  const cl = j.checklist || [];
+  const doneN = cl.filter((c) => c.done).length;
+  return `<article class="job-card ${pendingIds().has(j.id) ? 'pending' : ''}" style="--c:${st.color}" data-job-open="${esc(j.id)}" tabindex="0">
+    <div class="job-top"><span class="status-pill" style="--c:${st.color}">${st.label}</span>${j.priority && j.priority !== 'normal' ? `<span class="prio ${j.priority}">${j.priority === 'urgent' ? 'Urgent' : 'High'}</span>` : ''}<span class="tag"><span class="sw" style="background:${(TYPE[j.jobType] || TYPE.job).color}"></span>${(TYPE[j.jobType] || TYPE.job).label}</span>${j.ref ? `<span class="meta-line">#${esc(j.ref)}</span>` : ''}</div>
+    <h4>${esc(j.title || 'Untitled job')}</h4>
+    ${j.customer ? `<div class="job-line">${icon('user')} ${esc(j.customer)}${j.phone ? ` · <a class="link" href="tel:${esc(j.phone.replace(/[^0-9+]/g, ''))}" data-stop>${esc(j.phone)}</a>` : ''}</div>` : ''}
+    ${j.address ? `<div class="job-line">${icon('pin')} <a class="link" target="_blank" rel="noopener" data-stop href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(j.address)}">${esc(j.address)}</a></div>` : ''}
+    <div class="job-line ${when ? '' : 'muted'}">${icon('cal')} ${when ? esc(when) : 'Not on the calendar yet'}</div>
+    ${cl.length ? `<div class="progress" title="${doneN} of ${cl.length} done"><span style="width:${Math.round((doneN / cl.length) * 100)}%"></span></div><div class="meta-line">${doneN}/${cl.length} checklist items done</div>` : ''}
+    <div class="job-foot"><span class="who">${ppl.length ? pills(ppl) : '<span class="meta-line">No one assigned</span>'}</span>
+      ${!isClosed(j) ? `<button class="btn sm" data-job-sched="${esc(j.id)}">${when ? icon('cal') + ' Reschedule' : icon('cal') + ' Schedule'}</button>` : ''}</div>
+  </article>`;
+}
+
+function openJobEditor(id, opts = {}) {
+  const existing = id ? S.items.get(id) : null;
+  if (id && !existing) return toast('That job was removed.');
+  const j = JSON.parse(JSON.stringify(existing || { id: uid(), kind: 'job', title: '', customer: '', phone: '', email: '', address: '', jobType: 'job', status: 'new', priority: 'normal', ref: '', description: '', notes: '', assigned: [], eventId: '', checklist: [] }));
+  const ev = jobEvent(j);
+  const sch = ev ? { on: true, start: ev.start, end: ev.end, allDay: ev.allDay !== false, startTime: ev.startTime || '07:00', endTime: ev.endTime || '15:30' }
+    : { on: !!opts.schedule, start: opts.date || D.today(), end: opts.date || D.today(), allDay: true, startTime: '07:00', endTime: '15:30' };
+  const crew = new Set(jobPeople(j));
+  let checklist = (j.checklist || []).map((c) => Object.assign({}, c));
+  const clHtml = () => checklist.map((c, i) => `<div class="cl-row"><label><input type="checkbox" data-cl="${i}" ${c.done ? 'checked' : ''}><span class="${c.done ? 'strike' : ''}">${esc(c.t)}</span></label><button type="button" class="btn icon ghost sm" data-cl-del="${i}" aria-label="Remove">${icon('x')}</button></div>`).join('');
+  const html = `
+    <div class="modal-h"><h2>${existing ? 'Edit job' : 'New job'}</h2><button class="btn icon ghost" data-x="close" aria-label="Close">${icon('x')}</button></div>
+    <form class="modal-b" id="jobform" autocomplete="off">
+      <input class="inp title" name="title" placeholder="Job name — e.g. Smith reno, 200A service upgrade" value="${esc(j.title)}" maxlength="140" ${existing ? '' : 'autofocus'}>
+      <div class="row"><div class="field"><label>Customer</label><input class="inp" name="customer" value="${esc(j.customer)}" maxlength="80"></div>
+        <div class="field"><label>Phone</label><input class="inp" name="phone" type="tel" value="${esc(j.phone)}" maxlength="30"></div></div>
+      <div class="field"><label style="display:flex;justify-content:space-between">Address <a class="link" id="jobMap" target="_blank" rel="noopener" ${j.address ? '' : 'hidden'}>Open in Maps ↗</a></label><input class="inp" name="address" value="${esc(j.address)}" maxlength="200" list="dl-jaddr"></div>
+      <div class="field"><span class="lab">Type</span><div class="pick types" id="jobType">${JOB_TYPES.map((t) => `<button type="button" style="--c:${TYPE[t].color}" data-jt="${t}" aria-pressed="${j.jobType === t}"><span class="sw"></span>${TYPE[t].label}</button>`).join('')}</div></div>
+      <div class="row3"><div class="field"><label>Status</label><select class="inp" name="status">${JOB_STATUSES.map(([sid, l]) => `<option value="${sid}" ${j.status === sid ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label>Priority</label><select class="inp" name="priority">${[['normal', 'Normal'], ['high', 'High'], ['urgent', 'Urgent']].map(([p, l]) => `<option value="${p}" ${j.priority === p ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label>Quote / PO #</label><input class="inp" name="ref" value="${esc(j.ref)}" maxlength="30"></div></div>
+      <div class="field"><span class="lab" style="display:flex;gap:10px;align-items:center">Crew <span style="margin-left:auto;display:flex;gap:4px"><button type="button" class="btn sm ghost" data-crew="none">Clear</button></span></span>
+        <div class="pick" id="jobCrew">${people().filter((p) => !p.hidden || crew.has(p.name)).map((p) => `<button type="button" style="--c:${p.color}" data-pval="${esc(p.name)}" aria-pressed="${crew.has(p.name)}"><span class="av">${esc(initials(p.name))}</span>${esc(p.name)}</button>`).join('')}</div></div>
+      <div class="sched-box">
+        <label class="switch"><input type="checkbox" name="sched" ${sch.on ? 'checked' : ''}> Put on the crew’s calendar</label>
+        <div id="schedFields" ${sch.on ? '' : 'hidden'}>
+          <div class="row"><div class="field"><label>Starts</label><input class="inp" type="date" name="start" value="${sch.start}"></div><div class="field"><label>Ends</label><input class="inp" type="date" name="end" value="${sch.end}"></div></div>
+          <label class="switch" style="margin:8px 0"><input type="checkbox" name="allDay" ${sch.allDay ? 'checked' : ''}> All day</label>
+          <div class="row" id="jobTimes" ${sch.allDay ? 'hidden' : ''}><div class="field"><label>From</label><input class="inp" type="time" step="900" name="startTime" value="${sch.startTime}"></div><div class="field"><label>To</label><input class="inp" type="time" step="900" name="endTime" value="${sch.endTime}"></div></div>
+          <div id="jobWarns"></div>
+          ${ev ? '<p class="meta-line" style="margin:6px 0 0">You can also drag this job around on the calendar. Changes show up here.</p>' : ''}
+        </div>
+      </div>
+      <div class="field"><label>Scope of work</label><textarea class="inp" name="description" placeholder="What’s being done, materials, access, permits…" maxlength="4000">${esc(j.description)}</textarea></div>
+      <div class="field"><span class="lab">Checklist</span><div id="jobCl" class="cl-list">${clHtml()}</div>
+        <div class="copy-row"><input class="inp" id="clNew" placeholder="Add a step — e.g. ESA notification filed" maxlength="120"><button type="button" class="btn" data-cl-add>${icon('plus')} Add</button></div>
+        ${checklist.length ? '' : `<div class="pick" style="margin-top:6px">${['ESA notification', 'Permit pulled', 'Materials ordered', 'Rough-in done', 'Inspection passed', 'Final / clean-up', 'Invoice sent'].map((t) => `<button type="button" class="btn sm" data-cl-quick="${esc(t)}">+ ${esc(t)}</button>`).join('')}</div>`}</div>
+      <div class="field"><label>Office notes</label><textarea class="inp" name="notes" placeholder="Pricing, follow-ups, anything internal" maxlength="4000">${esc(j.notes)}</textarea></div>
+      ${existing ? `<div class="meta-line">Added by ${esc(existing.createdBy || 'someone')} ${esc(ago(existing.createdAt))}${existing.updatedBy ? ` · last edited by ${esc(existing.updatedBy)} ${esc(ago(existing.updatedAt))}` : ''}</div>` : ''}
+      <datalist id="dl-jaddr">${[...new Set(itemsOf('job').map((x) => x.address).concat([...S.events.values()].map((e) => e.location)).filter(Boolean))].slice(-80).map((a) => `<option value="${esc(a)}">`).join('')}</datalist>
+    </form>
+    <div class="modal-f">
+      ${existing ? `<button class="btn danger" data-x="delete">${icon('trash')} Delete</button>` : ''}
+      ${ev ? `<button class="btn ghost" data-x="goto">${icon('cal')} Show on calendar</button>` : ''}
+      <span class="sp"></span><button class="btn" data-x="close">Cancel</button><button class="btn primary" data-x="save">${existing ? 'Save job' : 'Add job'}</button>
+    </div>`;
+  const read = (ov) => {
+    const f = $('#jobform', ov), g = (n) => f.elements[n].value.trim();
+    const allDay = f.elements.allDay.checked;
+    let start = g('start') || D.today(), end = g('end') || start; if (end < start) end = start;
+    let st = g('startTime') || '07:00', et = g('endTime') || '15:30'; if (!allDay && D.mins(et) <= D.mins(st)) et = D.hm(D.mins(st) + 60);
+    return {
+      job: Object.assign(j, { title: g('title'), customer: g('customer'), phone: g('phone'), address: g('address'), status: g('status'), priority: g('priority'), ref: g('ref'), description: g('description'), notes: g('notes'),
+        jobType: ($('#jobType [aria-pressed="true"]', ov) || { dataset: { jt: 'job' } }).dataset.jt, assigned: $$('#jobCrew [aria-pressed="true"]', ov).map((b) => b.dataset.pval), checklist }),
+      sched: { on: f.elements.sched.checked, start, end, allDay, startTime: allDay ? '' : st, endTime: allDay ? '' : et }
+    };
+  };
+  const refresh = (ov) => {
+    const f = $('#jobform', ov);
+    $('#schedFields', ov).hidden = !f.elements.sched.checked;
+    $('#jobTimes', ov).hidden = f.elements.allDay.checked;
+    const ml = $('#jobMap', ov); const a = f.elements.address.value.trim(); ml.hidden = !a; ml.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(a);
+    const { job, sched } = read(ov);
+    const w = sched.on ? conflictsFor({ people: job.assigned, start: sched.start, end: sched.end, allDay: sched.allDay, startTime: sched.startTime, endTime: sched.endTime }, j.eventId || null) : [];
+    $('#jobWarns', ov).innerHTML = w.length ? `<div class="warnbox" style="margin-top:8px"><b>Heads up</b>${w.slice(0, 4).map((m) => `<span>${esc(m)}</span>`).join('')}</div>` : '';
+  };
+  openModal(html, {
+    dismiss: false,
+    onMount(ov) {
+      const f = $('#jobform', ov);
+      f.addEventListener('submit', (e) => e.preventDefault());
+      f.addEventListener('input', () => refresh(ov));
+      f.addEventListener('change', (e) => {
+        if (e.target.name === 'start') { const span = D.diff(sch.start, sch.end); if (f.elements.start.value) { f.elements.end.value = D.add(f.elements.start.value, Math.max(0, span)); sch.start = f.elements.start.value; sch.end = f.elements.end.value; } }
+        if (e.target.name === 'end') sch.end = f.elements.end.value;
+        const c = e.target.closest('[data-cl]'); if (c) { checklist[+c.dataset.cl].done = c.checked; c.nextElementSibling.classList.toggle('strike', c.checked); }
+        refresh(ov);
+      });
+      f.addEventListener('click', (e) => {
+        const t = e.target.closest('[data-jt]'); if (t) $$('#jobType button', ov).forEach((b) => b.setAttribute('aria-pressed', String(b === t)));
+        const p = e.target.closest('[data-pval]'); if (p) p.setAttribute('aria-pressed', String(p.getAttribute('aria-pressed') !== 'true'));
+        if (e.target.closest('[data-crew="none"]')) $$('#jobCrew button', ov).forEach((b) => b.setAttribute('aria-pressed', 'false'));
+        const addCl = (text) => { text = String(text || '').trim(); if (!text) return; checklist.push({ id: uid().slice(0, 8), t: text, done: false }); $('#jobCl', ov).innerHTML = clHtml(); };
+        if (e.target.closest('[data-cl-add]')) { addCl($('#clNew', ov).value); $('#clNew', ov).value = ''; $('#clNew', ov).focus(); }
+        const q = e.target.closest('[data-cl-quick]'); if (q) { addCl(q.dataset.clQuick); q.remove(); }
+        const d = e.target.closest('[data-cl-del]'); if (d) { checklist.splice(+d.dataset.clDel, 1); $('#jobCl', ov).innerHTML = clHtml(); }
+        refresh(ov);
+      });
+      $('#clNew', ov).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ov.querySelector('[data-cl-add]').click(); } });
+      refresh(ov);
+      if (opts.schedule) setTimeout(() => { const sb = $('.sched-box', ov); if (sb) sb.scrollIntoView({ block: 'center' }); }, 60);
+    },
+    async onClick(x, close, ov) {
+      if (x === 'close') return close();
+      if (x === 'goto') { close(); const e2 = jobEvent(j); if (e2) { S.section = 'calendar'; store.set('section', 'calendar'); go(e2.start, 'week'); } return; }
+      if (x === 'delete') {
+        const linked = jobEvent(j);
+        const ans = await choose('Delete this job?', j.title || '', linked ? [{ id: 'both', label: 'Delete job and its calendar entry', cls: 'danger solid' }, { id: 'job', label: 'Delete job, keep calendar entry' }] : [{ id: 'job', label: 'Delete job', cls: 'danger solid' }]);
+        if (!ans) return;
+        const before = JSON.parse(JSON.stringify(existing));
+        if (ans === 'both' && linked) { S.events.delete(linked.id); queue({ op: 'delete', id: linked.id }); }
+        deleteItem(j.id); close();
+        toast('Job deleted', { action: 'Undo', onAction: () => { saveItem(before, true); if (ans === 'both' && linked) saveEvent(linked, true); } });
+        return;
+      }
+      if (x === 'save') {
+        const { job, sched } = read(ov);
+        if (!job.title && !job.customer) { $('input[name="title"]', ov).focus(); return toast('Give the job a name', { error: true }); }
+        saveJob(job, sched);
+        close();
+        toast(sched.on ? 'Job saved and on the calendar' : 'Job saved');
+      }
+    }
+  });
+}
+function saveJob(job, sched) {
+  const linked = jobEvent(job);
+  if (sched && sched.on) {
+    const evTitle = job.title + (job.customer && job.title && !job.title.includes(job.customer) ? ' — ' + job.customer : '') || job.customer;
+    const notes = [job.customer && `Customer: ${job.customer}${job.phone ? ' · ' + job.phone : ''}`, job.ref && `Ref #${job.ref}`, job.description].filter(Boolean).join('\n');
+    const ev = Object.assign({ id: uid(), createdBy: S.me, createdAt: Date.now(), repeat: { freq: 'none', until: '', exdates: [] }, color: '' }, linked || {}, {
+      title: evTitle, type: JOB_TYPES.includes(job.jobType) ? job.jobType : 'job', people: job.assigned, location: job.address, notes,
+      start: sched.start, end: sched.end, allDay: sched.allDay, startTime: sched.startTime, endTime: sched.endTime, jobId: job.id
+    });
+    if (linked && linked.repeat && linked.repeat.freq !== 'none') ev.repeat = linked.repeat;
+    job.eventId = ev.id;
+    if (job.status === 'new') job.status = 'scheduled';
+    saveEvent(ev);
+  } else if (sched && !sched.on && linked) {
+    S.events.delete(linked.id); queue({ op: 'delete', id: linked.id });
+    job.eventId = '';
+    if (job.status === 'scheduled') job.status = 'new';
+  }
+  saveItem(job);
+}
+function setJobStatus(id, status) {
+  const j = S.items.get(id); if (!j) return;
+  saveItem(Object.assign({}, j, { status }));
+  toast('Marked ' + (JOB_STATUS[status] || {}).label);
+}
+
+/* ---------------- van service dates as calendar markers ---------------- */
+const VAN_TYPE = { id: 'van', label: 'Van service', color: '#b45309' };
+function vanMarkers(from, to) {
+  if (S.hiddenTypes.has('van')) return [];
+  const out = [];
+  vans().forEach((v) => {
+    [['nextService', 'service due'], ['safetyDue', 'safety / plate due']].forEach(([k, what]) => {
+      const d = v[k];
+      if (!d || d < from || d > to) return;
+      const ev = { id: 'van:' + v.id, synthetic: true, title: `${v.name} — ${what}`, type: 'van', people: v.driver ? [v.driver] : [], start: d, end: d, allDay: true, location: '', notes: '', repeat: { freq: 'none' } };
+      if (S.filter && !(ev.people || []).some((p) => S.filter.has(p))) return;
+      if (S.search && !ev.title.toLowerCase().includes(S.search.toLowerCase())) return;
+      out.push({ key: ev.id + '@' + d, ev, start: d, end: d, occ: d });
+    });
+  });
+  return out;
+}
+
+/* ---------------- badges & recent activity ---------------- */
+function sectionBadges() {
+  const jobs = itemsOf('job');
+  return {
+    jobs: jobs.filter((j) => !isClosed(j) && !jobEvent(j)).length,
+    vans: vans().filter((v) => ['repair', 'out', 'material'].includes(vanStatus(v).id)).length
+  };
+}
+function recentActivity(n = 8) {
+  const rows = [];
+  S.events.forEach((e) => { if (e.updatedAt) rows.push({ at: e.updatedAt, by: e.updatedBy, what: titleOf(e), open: `data-open="${esc(e.id + '@' + e.start)}"`, kind: 'Calendar' }); });
+  S.items.forEach((it) => {
+    if (!it.updatedAt || it.deleted) return;
+    if (it.kind === 'job') rows.push({ at: it.updatedAt, by: it.updatedBy, what: it.title || it.customer || 'Job', open: `data-job-open="${esc(it.id)}"`, kind: 'Job' });
+    if (it.kind === 'vanlog') { const v = vanById(it.vanId); rows.push({ at: it.updatedAt, by: it.updatedBy, what: `${it.text}${v ? ' (' + v.name + ')' : ''}`, open: `data-van-open="${esc(it.vanId)}"`, kind: (LOG_TYPES[it.type] || LOG_TYPES.note).label }); }
+    if (it.kind === 'van') rows.push({ at: it.updatedAt, by: it.updatedBy, what: it.name, open: `data-van-open="${esc(it.id)}"`, kind: 'Van' });
+  });
+  return rows.sort((a, b) => b.at - a.at).slice(0, n);
+}
+function seedDemoItems() {
+  const now = Date.now(), ws = D.weekStart(D.today(), 1);
+  const log = (vanId, type, text, o = {}) => Object.assign({ id: uid(), kind: 'vanlog', vanId, type, text, qty: '', urgent: false, status: 'open', createdBy: 'Dustin', createdAt: now - 3600e3 * (2 + Math.random() * 40), updatedAt: now, updatedBy: 'Dustin' }, o);
+  [
+    log('van_dustin', 'material', '14/2 NMD90 wire', { qty: '2 rolls' }),
+    log('van_dustin', 'material', 'Marettes — yellow & red', { qty: '1 box each' }),
+    log('van_cal', 'repair', 'Check engine light on, rough idle', { urgent: true, createdBy: 'Cal' }),
+    log('van_mike', 'material', '15A breakers (Siemens)', { qty: '6', status: 'progress', createdBy: 'Mike' }),
+    log('van_noah', 'service', 'Rear tires getting low on tread', { createdBy: 'Noah' }),
+    log('van_scott', 'material', '1/2" EMT connectors', { qty: '50', createdBy: 'Scott' })
+  ].forEach((l) => S.items.set(l.id, l));
+  S.items.set('van_kevin', Object.assign({}, DEFAULT_VANS.find((v) => v.id === 'van_kevin'), { unit: '2', plate: 'BX12 345', model: '2022 Ford Transit 250', nextService: D.add(D.today(), 5), updatedAt: now, updatedBy: 'Kevin' }));
+  const job = (o) => Object.assign({ id: uid(), kind: 'job', title: '', customer: '', phone: '', email: '', address: '', jobType: 'job', status: 'new', priority: 'normal', ref: '', description: '', notes: '', assigned: [], eventId: '', checklist: [], createdBy: 'Joanne', createdAt: now - 86400e3, updatedAt: now, updatedBy: 'Joanne' }, o);
+  const linked = [...S.events.values()].find((e) => e.title && e.title.startsWith('Smith reno'));
+  const j1 = job({ title: 'Smith reno — 200A panel upgrade', customer: 'Dave Smith', phone: '905-555-0142', address: '1420 Altona Rd, Pickering', status: 'scheduled', ref: 'Q-2291', assigned: ['Dustin', 'Cal'], description: 'Replace 100A panel with 200A, new meter base, bond water & gas.', checklist: [{ id: 'a', t: 'ESA notification', done: true }, { id: 'b', t: 'Hydro disconnect booked', done: true }, { id: 'c', t: 'Inspection passed', done: false }] });
+  if (linked) { j1.eventId = linked.id; linked.jobId = j1.id; }
+  [j1,
+    job({ title: 'Basement pot lights (12)', customer: 'Priya Patel', phone: '416-555-0199', address: '22 Rougemount Dr, Pickering', priority: 'high', assigned: ['Michael'], description: '12 x 4" slim LED pot lights, 2 dimmers.' }),
+    job({ title: 'Hot tub hookup', customer: 'L. Martin', address: 'Ajax', jobType: 'service', description: '50A GFCI disconnect, 40 ft run.' }),
+    job({ title: 'Warehouse LED retrofit quote', customer: 'Durham Storage', jobType: 'quote', status: 'waiting', assigned: ['Kevin'], description: 'Waiting on fixture pricing from supplier.' }),
+    job({ title: 'Kitchen circuits — Brock St', customer: 'R. Chen', status: 'done', assigned: ['Scott'] })
+  ].forEach((j) => S.items.set(j.id, j));
+}
+
+/* ======================================================================
    INTERACTION
    ====================================================================== */
 function onClick(e) {
   const t = e.target;
+  const qa = t.closest('[data-qa]');
+  if (qa) { e.preventDefault(); qa.parentElement.querySelectorAll('[data-qa]').forEach((b) => b.setAttribute('aria-pressed', String(b === qa))); const inp = qa.closest('form').elements.text; if (inp) inp.placeholder = { material: 'e.g. 14/2 wire, 2 boxes of marettes…', repair: 'e.g. brake noise, check engine light…', service: 'e.g. oil change due, tires…', note: 'Anything to note' }[qa.dataset.qa]; return; }
   if (t.closest('.overlay')) return;
   const q = (s) => t.closest(s);
   let el;
+  if (q('[data-stop]')) return; // links inside cards (phone, maps)
+  if ((el = q('[data-section]'))) return setSection(el.dataset.section);
+  if ((el = q('[data-job-filter]'))) { S.jobFilter = el.dataset.jobFilter; store.set('jobFilter', S.jobFilter); return renderMain(); }
+  if ((el = q('[data-job-sched]'))) { e.stopPropagation(); return openJobEditor(el.dataset.jobSched, { schedule: true }); }
+  if ((el = q('[data-job-open]'))) { e.preventDefault(); return openJobEditor(el.dataset.jobOpen); }
+  if ((el = q('[data-log-cycle]'))) { e.preventDefault(); return cycleLog(el.dataset.logCycle); }
+  if ((el = q('[data-van-open]'))) { e.preventDefault(); return openVanEditor(el.dataset.vanOpen); }
+  if ((el = q('[data-open^="van:"]'))) { e.preventDefault(); return openVanEditor(el.dataset.open.slice(4).split('@')[0]); }
   if (matchMedia('(max-width: 720px)').matches && (el = q('.mcell'))) { // phones: tapping a day shows its list below the month
     S.selected = el.dataset.date; renderMain();
     const p = $('.day-panel'); if (p) p.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1298,7 +1911,10 @@ function onClick(e) {
       prev: () => step(-1),
       next: () => step(1),
       jump: jumpTo,
-      new: () => openEditor({ date: S.view === 'month' && matchMedia('(max-width: 720px)').matches ? S.selected : S.date }),
+      new: () => (S.section === 'jobs' ? openJobEditor() : S.section === 'vans' ? openReport() : openEditor({ date: S.view === 'month' && matchMedia('(max-width: 720px)').matches ? S.selected : S.date })),
+      'new-job': () => openJobEditor(),
+      'material-list': openMaterialList,
+      'add-van': () => openVanEditor(),
       settings: () => openSettings(),
       syncinfo: () => openSettings('help'),
       whoami: () => whoAmI(),
@@ -1363,7 +1979,7 @@ function onKey(e) {
   if (modalStack.length || e.metaKey || e.ctrlKey || e.altKey) return;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
   const k = e.key.toLowerCase();
-  const map = { t: () => go(D.today()), m: () => setView('month'), w: () => setView('week'), d: () => setView('day'), c: () => setView('crew'), l: () => setView('list'),
+  const map = { t: () => go(D.today()), m: () => setView('month'), w: () => setView('week'), d: () => setView('day'), c: () => setView('crew'), l: () => setView('list'), j: () => setSection('jobs'), v: () => setSection('vans'),
     n: () => openEditor({ date: S.date }), arrowleft: () => step(-1), arrowright: () => step(1), '/': () => { const q = $('#q'); if (q) { $('#searchBox').classList.add('open'); q.focus(); } } };
   if (map[k]) { e.preventDefault(); map[k](); }
 }
@@ -1373,7 +1989,7 @@ function onKey(e) {
    ====================================================================== */
 function readHash() {
   const h = new URLSearchParams(location.hash.replace(/^#/, '') + '&' + location.search.replace(/^\?/, ''));
-  return { key: h.get('k'), demo: h.has('demo'), person: h.get('person'), view: h.get('view'), date: h.get('date') };
+  return { key: h.get('k'), demo: h.has('demo'), person: h.get('person'), view: h.get('view'), date: h.get('date'), section: h.get('section') };
 }
 function boot() {
   applyTheme();
@@ -1391,7 +2007,8 @@ function boot() {
     // keep the key in the address so "Add to Home Screen" works
     if (!h.key) history.replaceState(null, '', location.pathname + location.search + '#k=' + S.key);
   }
-  if (h.view && VIEWS.some(([v]) => v === h.view)) S.view = h.view;
+  if (h.view && VIEWS.some(([v]) => v === h.view)) { S.view = h.view; S.section = 'calendar'; }
+  if (h.section && SECTIONS.some(([x]) => x === h.section)) S.section = h.section;
   if (h.date && /^\d{4}-\d{2}-\d{2}$/.test(h.date)) { S.date = h.date; S.selected = h.date; }
   if (S.demo) seedDemo(); else loadCache();
   if (h.person) {
@@ -1402,7 +2019,20 @@ function boot() {
   shell();
   renderAll();
   document.addEventListener('click', onClick);
-  document.addEventListener('change', (e) => { const c = e.target.closest('[data-check]'); if (c) togglePerson(c.dataset.check, 'check'); });
+  document.addEventListener('change', (e) => {
+    const c = e.target.closest('[data-check]'); if (c) togglePerson(c.dataset.check, 'check');
+    if (e.target.id === 'jobPerson') { S.jobPerson = e.target.value; renderMain(); }
+  });
+  document.addEventListener('submit', (e) => { // quick-add forms on van cards and in the van editor
+    const f = e.target.closest('form.quick-add'); if (!f) return;
+    e.preventDefault();
+    const type = (f.querySelector('[data-qa][aria-pressed="true"]') || { dataset: { qa: 'material' } }).dataset.qa;
+    const text = f.elements.text.value.trim();
+    if (!text) return f.elements.text.focus();
+    addLog(f.dataset.van, type, text, { qty: f.elements.qty ? f.elements.qty.value.trim() : '', urgent: f.elements.urgent ? f.elements.urgent.checked : false });
+    const ov = f.closest('.overlay'); if (ov && ov._repaint) { f.reset(); ov._repaint(); f.elements.text.focus(); }
+    toast('Added');
+  });
   document.addEventListener('dblclick', (e) => { const c = e.target.closest('.mcell'); if (c && !e.target.closest('[data-open],button')) openEditor({ date: c.dataset.date }); });
   document.addEventListener('dragstart', onDragStart);
   document.addEventListener('dragover', onDragOver);
